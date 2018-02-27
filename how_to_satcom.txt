@@ -1,0 +1,125 @@
+Guide on how to Satcom (updated 07.12.2017)
+===============================================================================================
+
+-----------------------------------------------------------------------------------------------
+General Satcom stuff on groundstation pc
+-----------------------------------------------------------------------------------------------
+
+- sudo pip install pika 	sudo pip install tornado 	sudo pip install future
+
+- pip install --upgrade pip enum34
+
+- go to cloned 'SatCom' folder, edit 'udp2rabbit.cfg' if required, then run 'udp2rabbit.py'
+
+- go to 'https://rockblock.rock7.com' and log in with the credentials
+
+- check delivery groups and make sure delivery address is set to the relay server
+
+- make sure that we have credits left and the line rental is paid
+
+-----------------------------------------------------------------------------------------------
+Satcom stuff on server
+-----------------------------------------------------------------------------------------------
+- if linux container is not running, check out the file how_to_VirtualServers.txt
+
+- cd ~/.ssh/config and configure user and port
+
+- log in to relay server
+
+- check if rabbitmq does what it is supposed to (should be fine):
+	
+	sudo rabbitmqctl list_queues 
+	
+	should give you something like:
+	
+	Listing queues ...
+	MO	0
+	MO_LOG	331
+	MT	0
+	MT_LOG	31
+
+- if this is not the case, check out the readme on github
+
+- check if the settings in relay.cfg are correct (IMEIs of iridium modems on RockBlock website)
+
+- check if the relay script is running (should be running):
+
+	screen -dr
+
+- if it runs, remember to leave screen with 'ctrl+a d' in order to detach from screen,
+	instead of killing it (in case you actually want to kill it type 'ctrl+a :quit')
+
+- in order to start it from the home directory do:
+	
+	screen -dm bash -c 'cd satcom/fw_SatCom/; ./relay.py'
+
+-----------------------------------------------------------------------------------------------
+Pixhawk 
+-----------------------------------------------------------------------------------------------
+
+- either: use sd-card for satcom (see example in the same folder as you found this file)
+
+- or add the following in the start script:
+	
+	set SATCOM yes
+
+	# Start MAVLink instance #2 (to satellite modem) through external script 
+	if [ -f /fs/microsd/etc/telem_config/telemsat.txt -a $SATCOM == yes ]
+	then
+	echo "[MAVLINK] Start SATCOM MAVLINK instance"
+	sh /fs/microsd/etc/telem_config/telemsat.txt
+
+- check that there is a 'telemsat.txt' file in the 'etc/telem_config' folder
+
+- check that the driver is running (should be started in 'telemsat.txt'):
+	
+	iridiumsbd status
+
+- if not, start it:
+
+	iridiumsbd start -d /dev/ttyS6
+
+- check if the modem responds correctly (make sure to use upper case letters for AT etc.)
+
+	iridiumsbd test AT
+
+- check the signal quality (0: no signal, 1-5: signal strenght; aim for 5):
+
+	iridiumsbd test AT+CSQ
+
+- if you want you can send a test message and check if it appears on the rockblock website:
+
+	iridiumsbd test s
+
+- if you want to stop the driver first kill mavlink or pixhawk will crash:
+
+	mavlink stop-all
+	iridiumsbd stop
+	
+-----------------------------------------------------------------------------------------------
+QGC (outdated, will be changed)
+-----------------------------------------------------------------------------------------------
+
+- in general settings check 'parameter autosave' and choose a directory
+
+- add a communication link of type 'udp'
+
+- set listening port to '10000' and add a target host '127.0.0.1:10001'
+
+- check 'high latency link'
+
+- connect normal telemetry link, download params, mission etc.
+
+- connect udp link, a new sign appears in the toolbar
+
+- click it and then click 'switch to satcom'
+
+- check on the pixhawk console whether the driver is doing reasonable things and 
+	see qgc console for messages being sent on the respective link
+
+-----------------------------------------------------------------------------------------------
+Additional Notes 
+-----------------------------------------------------------------------------------------------
+
+TODO
+Loading params and mission to new laptop and make GQC accepting it.
