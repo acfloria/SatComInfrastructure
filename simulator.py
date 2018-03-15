@@ -8,7 +8,11 @@ import serial
 from enum import Enum
 from pymavlink import mavlink
 import ConfigParser
+import time
+import random
 
+ideal_sim = True
+fraction_good_signal = 0.25
 
 MAV = mavlink.MAVLink(0)
 
@@ -20,8 +24,10 @@ def printmsg(direction, data):
     except:
         pass
     if m is not None:
-        m = m[0]
-        print '%s MAV MSG %3d %s' % (direction, m.get_msgId(), m.get_type())
+        for msg in m:
+            print 'MAV MSG %3d %s' % (msg.get_msgId(), msg.get_type())
+            if (msg.get_msgId() == 76):
+                print msg
 
 
 class IridiumInterface:
@@ -184,7 +190,15 @@ class IridiumSimulator:
         self.ring_message_pending = False
 
     def at_csq(self):
-        self.sendSerial('+CSQ:5')
+        if ideal_sim:
+            self.sendSerial('+CSQ:5')
+        else:
+            time.sleep(4)
+            if (random.random() < fraction_good_signal):
+                self.sendSerial('+CSQ:5')
+            else:
+                self.sendSerial('+CSQ:0')
+
         self.sendOK()
 
     def at_sbdd0(self):
@@ -201,6 +215,10 @@ class IridiumSimulator:
             self.mt_buffer = self.mt_queue.pop(0)
         else:
             self.mt_buffer = ''
+
+        if not ideal_sim:
+            time.sleep(20)
+
         self.sendSerial('+SBDIX:0,0,{0},0,{1},{2}'.format(1 if self.mt_buffer else 0, len(self.mt_buffer), len(self.mt_queue)))
         self.sendOK()
 
