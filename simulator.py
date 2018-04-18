@@ -11,8 +11,8 @@ import ConfigParser
 import time
 import random
 
-ideal_sim = True
-fraction_good_signal = 0.25
+ideal_sim = False
+fraction_good_signal = 0.6
 
 MAV = mavlink.MAVLink(0)
 
@@ -25,9 +25,9 @@ def printmsg(direction, data):
         pass
     if m is not None:
         for msg in m:
-            print 'MAV MSG %3d %s' % (msg.get_msgId(), msg.get_type())
-            if (msg.get_msgId() == 76):
-                print msg
+            print '%s MAV MSG %3d %s' % (direction, msg.get_msgId(), msg.get_type())
+            #if (msg.get_msgId() == 76):
+            print msg
 
 
 class IridiumInterface:
@@ -208,19 +208,25 @@ class IridiumSimulator:
         self.sendOK()
 
     def at_sbdix(self):
-        if self.mo_buffer:
-            printmsg('-->', self.mo_buffer)
-            self.webInterface.post_message(self.mo_buffer)
-        if self.mt_queue:
-            self.mt_buffer = self.mt_queue.pop(0)
-        else:
-            self.mt_buffer = ''
-
         if not ideal_sim:
-            time.sleep(20)
+            time.sleep(10)
 
-        self.sendSerial('+SBDIX:0,0,{0},0,{1},{2}'.format(1 if self.mt_buffer else 0, len(self.mt_buffer), len(self.mt_queue)))
-        self.sendOK()
+        if (random.random() < fraction_good_signal):
+            # session was successful
+            if self.mo_buffer:
+                printmsg('-->', self.mo_buffer)
+                self.webInterface.post_message(self.mo_buffer)
+            if self.mt_queue:
+                self.mt_buffer = self.mt_queue.pop(0)
+            else:
+                self.mt_buffer = ''
+
+            self.sendSerial('+SBDIX:0,0,{0},0,{1},{2}'.format(1 if self.mt_buffer else 0, len(self.mt_buffer), len(self.mt_queue)))
+            self.sendOK()
+        else:
+            # failed session
+            self.sendSerial('+SBDIX:32,0,{0},0,{1},{2}'.format(1 if self.mt_buffer else 0, len(self.mt_buffer), len(self.mt_queue)))
+            self.sendOK()
 
     def at_sbdixa(self):
         self.ring_off()
