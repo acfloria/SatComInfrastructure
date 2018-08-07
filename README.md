@@ -1,4 +1,4 @@
-# fw_SatCom
+# SatComInfrastructure
 Iridium SBD Satellite Communication System utility software for data relay and handling.
 
 The system is based on the [Rock7 RockBLOCK](http://www.rock7mobile.com/products-rockblock) Iridium modem.
@@ -73,15 +73,13 @@ System architecture showing the use of the Iridium System simulator.
 
     * `Listening port: 10000`
     * `Target hosts: 127.0.0.1:10001`
+    * `High Latency: Checked`
 
 ## Using the system
 
 ### Relay server
 
-Start the `relay.py` script. This has to be running whenever satellite communication is used. To prevent the process from getting killed it's advised to run it using the `screen` tool. relay.py is started automatically now, to check it use 'screen -r'. leave screen with ctrl-A -> d to detatch from screen (dont stop or kill it).
-
-relay.py is started in /etc/rc.local.
-
+Start the `relay.py` script. This has to be running whenever satellite communication is used. To prevent the process from getting killed it's advised to run it using the `screen` tool. Leave screen with ctrl-A -> d to detatch from screen (dont stop or kill it).
 
 
 ### QGC computer
@@ -98,3 +96,4 @@ The simulator replaces the actual Iridium System hardware (modem, satellites and
 
 * Write a logging app making use of the `MO_LOG` and `MT_LOG` queues.
 * Integrate the RabbitMQ interface into QGC, eliminating the need of the `udp2rabbit.py` script.
+* Use MQTT as the messaging protocoll to allow multiple users receiving the messages and make an integration in QT easier.
