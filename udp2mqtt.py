@@ -4,7 +4,7 @@ import ConfigParser
 import logging
 import paho.mqtt.client as mqtt
 import socket
-from threading import Thread, Lock
+from threading import Thread
 import time
 import tornado.web
 import tornado.ioloop
@@ -14,33 +14,30 @@ import tornado.httputil
 LOG_FORMAT = '%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'
 LOGGER = logging.getLogger(__name__)
 
-class LteInterface():
-    def __init__(self, rx_port):
+
+class UdpInterface():
+    def __init__(self, rx_port, tx_port, type):
         self.__sock = None
         self.__rx_port = rx_port
-        self.__host_ip = None
+        self.__tx_port = tx_port
+        self.__type = type
         self.on_message_callback = None
 
     def on_receive(self, fd, events):
-        LOGGER.info('Received LTE data')
+        LOGGER.info('Received' + self.__type + ' data on UDP')
         (data, source_ip_port) = self.__sock.recvfrom(4096)
-        self.__host_ip = source_ip_port[0]
-        self.__tx_port = source_ip_port[1]
         self.on_message_callback(data)
 
     def send(self, data):
-        if (self.__host_ip != None):
-            LOGGER.info('Sending LTE data to %s:%d', self.__host_ip, self.__tx_port)
-            self.__sock.sendto(data, (self.__host_ip, self.__tx_port))
-        else:
-            LOGGER.warn('No IP port available, unable to send over UDP')
+        LOGGER.info('Sending' + self.__type + ' data on UDP')
+        self.__sock.sendto(data, ('localhost', self.__tx_port))
 
     def open(self):
         LOGGER.warn('Opening UDP port %d', self.__rx_port)
         self.__sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.__sock.setblocking(False)
         tornado.ioloop.IOLoop.current().add_handler(self.__sock.fileno(), self.on_receive, tornado.ioloop.IOLoop.READ)
-        self.__sock.bind(('', self.__rx_port)) # all available interfaces
+        self.__sock.bind(('localhost', self.__rx_port))
 
     def close(self):
         LOGGER.warn('Closing UDP port')
@@ -48,74 +45,6 @@ class LteInterface():
         self.__sock.close()
         self.__sock = None
 
-
-class IridiumInterface:
-    def __init__(self, iridium_url, local_port, rock7_credentials):
-        self.__http_server = None
-        self.__http_client = tornado.httpclient.AsyncHTTPClient()
-        self.__url = iridium_url
-        self.__port = local_port
-        self.__waiting_for_confirm = {}
-        self.__post_data = rock7_credentials
-        self.__threads = []
-        self.__lock = Lock()
-        self.on_message_callback = None
-
-    def __on_message_sent(self, response):
-        self.__lock.acquire()
-        idx, data = self.__waiting_for_confirm.pop(response.request)
-
-        # clean up threads
-        for thr in self.__threads:
-            if not thr.is_alive():
-                self.__threads.remove(thr)
-
-        if response.error:
-            LOGGER.warn('Error sending: %s', response.error)
-            thr_redeliver = Thread(target=self.__repost_message, args=(data, idx))
-            thr_redeliver.daemon = True
-            thr_redeliver.start()
-            self.__threads.append(thr_redeliver)
-        
-        self.__lock.release()
-
-    def __repost_message(self, data, idx):
-        time.sleep(10.0)
-        self.post_message(data, idx)
-
-    class PostHandler(tornado.web.RequestHandler):
-        def initialize(self, cb):
-            self.on_msg_callback = cb
-
-        @tornado.web.asynchronous
-        def post(self):
-            LOGGER.warn('Received MO message from Iridium')
-            try:
-                msg = self.request.arguments['data'][0].decode('hex')
-            except:
-                LOGGER.warn('Failed to decode the MO message')
-                self.set_status(400)
-                self.finish()
-            else:
-                self.on_msg_callback(msg)
-                self.finish() #TODO check if the message was successfully published
-
-    def post_message(self, data, idx):
-        self.__lock.acquire()
-        LOGGER.info('Sending MT message # %i to Iridium', idx)
-        self.__post_data['data'] = data.encode('hex')
-        body = tornado.httputil.urlencode(self.__post_data)
-        request = tornado.httpclient.HTTPRequest(self.__url, method='POST', body=body)
-        self.__waiting_for_confirm[request] = (idx, data)
-        self.__lock.release()
-        self.__http_client.fetch(request, self.__on_message_sent)
-        
-
-    def start(self):
-        args = dict(cb=self.on_message_callback)
-        self.__http_server = tornado.web.Application([(r"/", self.PostHandler, args)])
-        self.__http_server.listen(self.__port)
-        LOGGER.warn('Starting iridum interface on %s', self.__url)
 
 class MqttInterface(object):
     def __init__(self, ip, port, user, pwd):
@@ -127,12 +56,11 @@ class MqttInterface(object):
         self.__client_connected_flag = False
         self.__client_bad_connection_flag = False
         self.__publish_counter = 1
-        self.__iridium_counter = 0
         self.lte_on_message_callback = None
         self.satcom_on_message_callback = None
 
     def __connect(self):
-        self.__client = mqtt.Client('relay_server')
+        self.__client = mqtt.Client()
         self.__client.on_connect = self.__on_connect
         self.__client.on_message = self.__on_message
         self.__client.on_disconnect = self.__on_disconnect
@@ -161,12 +89,12 @@ class MqttInterface(object):
 
             # Subscribing in on_connect() means that if we lose the connection and
             # reconnect then subscriptions will be renewed.
-            client.subscribe('telem/LTE_to_plane', qos=2)
-            client.subscribe('telem/SatCom_to_plane', qos=2)
+            client.subscribe('telem/LTE_from_plane', qos=2)
+            client.subscribe('telem/SatCom_from_plane', qos=2)
 
             # add the callback to handle the respective queues
-            client.message_callback_add('telem/LTE_to_plane', self.__callback_LTE)
-            client.message_callback_add('telem/SatCom_to_plane', self.__callback_SatCom)
+            client.message_callback_add('telem/LTE_from_plane', self.__callback_LTE)
+            client.message_callback_add('telem/SatCom_from_plane', self.__callback_SatCom)
         elif rc == 3:
             LOGGER.warn('Connected failed, server unavailable, retrying in 1 second')
         else:
@@ -178,24 +106,23 @@ class MqttInterface(object):
         LOGGER.warn('Client disconnecting, reason: ' + str(rc))
 
     def __callback_SatCom(self, client, userdata, msg):
-        self.__iridium_counter += 1
         LOGGER.info('MQTT received message from ' + msg.topic)
-        self.satcom_on_message_callback(msg.payload, self.__iridium_counter)
+        self.satcom_on_message_callback(msg.payload)
 
     def __callback_LTE(self, client, userdata, msg):
         LOGGER.info('MQTT received message from ' + msg.topic)
         self.lte_on_message_callback(msg.payload)
 
     def __publish_message(self, topic, data):
-        self.__client.publish(topic, data, qos=2, retain=True)
+        self.__client.publish(topic, data, qos=2, retain=False)
         self.__publish_counter += 1
         LOGGER.info('Published message # %i to ' + topic, self.__publish_counter - 1)
 
     def publish_lte_message(self, data):
-        self.__publish_message('telem/LTE_from_plane', data)
+        self.__publish_message('telem/LTE_to_plane', data)
 
     def publish_satcom_message(self, data):
-        self.__publish_message('telem/SatCom_from_plane', data)
+        self.__publish_message('telem/SatCom_to_plane', data)
 
     def start(self):
         self.__connect()
@@ -208,11 +135,10 @@ class MqttInterface(object):
 
 
 def main():
-    config_file = 'relay.cfg'
+    config_file = 'udp2mqtt.cfg'
     config = ConfigParser.RawConfigParser()
     credentials_file = 'credentials.cfg'
     credentials = ConfigParser.RawConfigParser()
-    rock7_credentials = {}
     try:
         config.read(config_file)
         credentials.read(credentials_file)
@@ -220,36 +146,33 @@ def main():
         port = config.getint('mqtt', 'port')
         user = credentials.get('mqtt', 'user')
         pwd = credentials.get('mqtt', 'password')
-        rx_port = config.getint('lte', 'target_port')
-        iridium_url = config.get('iridium', 'url')
-        iridium_local_port = config.getint('iridium', 'local_port')
-        rock7_credentials['imei'] = credentials.get('rockblock', 'imei')
-        rock7_credentials['username'] = credentials.get('rockblock', 'username')
-        rock7_credentials['password'] = credentials.get('rockblock', 'password')
-
+        lte_rx_port = config.getint('lte', 'target_port')
+        lte_tx_port = config.getint('lte', 'listening_port')
+        satcom_rx_port = config.getint('satcom', 'target_port')
+        satcom_tx_port = config.getint('satcom', 'listening_port')
     except ConfigParser.Error as e:
         print('Error reading configuration files ' + config_file + ' and ' + credentials_file + ':')
         print(e)
         quit()
 
-    logging.basicConfig(filename='relay.log', level=logging.INFO, format=LOG_FORMAT)
+    logging.basicConfig(filename='udp2mqtt.log', level=logging.INFO, format=LOG_FORMAT)
     console = logging.StreamHandler()
     console.setLevel(logging.WARN)
     formatter = logging.Formatter(LOG_FORMAT)
     console.setFormatter(formatter)
     logging.getLogger('').addHandler(console)
     mi = MqttInterface(host, port, user, pwd)
-    li = LteInterface(rx_port)
-    ii = IridiumInterface(iridium_url, iridium_local_port, rock7_credentials)
+    li = UdpInterface(lte_rx_port, lte_tx_port, 'LTE')
+    si = UdpInterface(satcom_rx_port, satcom_tx_port, 'SatCom')
 
     mi.lte_on_message_callback = li.send
-    mi.satcom_on_message_callback = ii.post_message
+    mi.satcom_on_message_callback = si.send
     li.on_message_callback = mi.publish_lte_message
-    ii.on_message_callback = mi.publish_satcom_message
+    si.on_message_callback = mi.publish_satcom_message
 
     li.open()
-    ii.start()
-    mi.start()
+    si.open()
+    mi.start() # needs to be called last because the mqtt loop is started in here
 
     try:
         tornado.ioloop.IOLoop.current().start()
@@ -259,7 +182,6 @@ def main():
         a = Thread(target=mi.stop()) 
         a.start()
         a.join()
-        
 
 if __name__ == '__main__':
     main()

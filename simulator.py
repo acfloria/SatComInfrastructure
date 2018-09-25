@@ -11,8 +11,8 @@ import ConfigParser
 import time
 import random
 
-ideal_sim = False
-fraction_good_signal = 0.6
+ideal_sim = True
+fraction_good_signal = 1.0
 
 MAV = mavlink.MAVLink(0)
 
@@ -209,7 +209,7 @@ class IridiumSimulator:
 
     def at_sbdix(self):
         if not ideal_sim:
-            time.sleep(10)
+            time.sleep(15)
 
         if (random.random() < fraction_good_signal):
             # session was successful
