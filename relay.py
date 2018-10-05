@@ -19,10 +19,14 @@ class LteInterface():
         self.__sock = None
         self.__rx_port = rx_port
         self.__host_ip = None
+        self.__message_counter = 0
         self.on_message_callback = None
 
     def on_receive(self, fd, events):
-        LOGGER.info('Received LTE data')
+        if (self.__message_counter % 1000 == 0):
+            LOGGER.warn('Received LTE data #%d', self.__message_counter)
+        else:
+            LOGGER.info('Received LTE data #%d', self.__message_counter)
         (data, source_ip_port) = self.__sock.recvfrom(4096)
         self.__host_ip = source_ip_port[0]
         self.__tx_port = source_ip_port[1]
@@ -232,7 +236,7 @@ def main():
         print(e)
         quit()
 
-    logging.basicConfig(filename='relay.log', level=logging.INFO, format=LOG_FORMAT)
+    logging.basicConfig(filename='relay.log', level=logging.WARN, format=LOG_FORMAT)
     console = logging.StreamHandler()
     console.setLevel(logging.WARN)
     formatter = logging.Formatter(LOG_FORMAT)
