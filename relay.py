@@ -194,16 +194,16 @@ class MqttInterface(object):
         LOGGER.info('MQTT received message from ' + msg.topic)
         self.lte_on_message_callback(msg.payload)
 
-    def __publish_message(self, topic, data):
-        self.__client.publish(topic, data, qos=2, retain=True)
+    def __publish_message(self, topic, data, retain):
+        self.__client.publish(topic, data, qos=2, retain=retain)
         self.__publish_counter += 1
         LOGGER.info('Published message # %i to ' + topic, self.__publish_counter - 1)
 
     def publish_lte_message(self, data):
-        self.__publish_message('telem/LTE_from_plane', data)
+        self.__publish_message('telem/LTE_from_plane', data, False)
 
     def publish_satcom_message(self, data):
-        self.__publish_message('telem/SatCom_from_plane', data)
+        self.__publish_message('telem/SatCom_from_plane', data, True)
 
     def start(self):
         self.__connect()
