@@ -29,7 +29,7 @@ class LteInterface():
         (data, source_ip_port) = self.__sock.recvfrom(4096)
 
         self.__message_counter += 1
-        self.__bytes_counter += sys.getsizeof(data)
+        self.__bytes_counter += sys.getsizeof(data) - 37
         if (self.__message_counter % 1000 == 0):
             LOGGER.warn('Received LTE data #{0}, rate: {1} kB/s'.format(self.__message_counter, self.__bytes_counter / (1000.0 * (time.clock() - self.__last_time))))
             self.__last_time = time.clock()
