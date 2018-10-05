@@ -4,6 +4,7 @@ import ConfigParser
 import logging
 import paho.mqtt.client as mqtt
 import socket
+import sys
 from threading import Thread, Lock
 import time
 import tornado.web
@@ -20,18 +21,22 @@ class LteInterface():
         self.__rx_port = rx_port
         self.__host_ip = None
         self.__message_counter = 0
+        self.__bytes_counter = 0
         self.__last_time = time.clock()
         self.on_message_callback = None
 
     def on_receive(self, fd, events):
+        (data, source_ip_port) = self.__sock.recvfrom(4096)
+
+        self.__message_counter += 1
+        self.__bytes_counter += sys.getsizeof(data)
         if (self.__message_counter % 1000 == 0):
-            LOGGER.warn('Received LTE data #{0}, rate: {1} Hz'.format(self.__message_counter, 1000.0 / (time.clock() - self.__last_time)))
+            LOGGER.warn('Received LTE data #{0}, rate: {1} kB/s'.format(self.__message_counter, self.__bytes_counter / (1000.0 * (time.clock() - self.__last_time))))
             self.__last_time = time.clock()
+            self.__bytes_counter = 0
         else:
             LOGGER.info('Received LTE data #%d', self.__message_counter)
-        self.__message_counter += 1
 
-        (data, source_ip_port) = self.__sock.recvfrom(4096)
         self.__host_ip = source_ip_port[0]
         self.__tx_port = source_ip_port[1]
         self.on_message_callback(data)
