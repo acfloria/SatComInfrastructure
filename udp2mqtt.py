@@ -106,7 +106,7 @@ class MqttInterface(object):
         LOGGER.warn('Client disconnecting, reason: ' + str(rc))
 
     def __callback_SatCom(self, client, userdata, msg):
-        LOGGER.info('MQTT received message from ' + msg.topic)
+        LOGGER.warn('MQTT received message from ' + msg.topic)
         self.satcom_on_message_callback(msg.payload)
 
     def __callback_LTE(self, client, userdata, msg):
@@ -122,6 +122,7 @@ class MqttInterface(object):
         self.__publish_message('telem/LTE_to_plane', data)
 
     def publish_satcom_message(self, data):
+        LOGGER.warn('Send SatCom message to plane')
         self.__publish_message('telem/SatCom_to_plane', data)
 
     def start(self):
@@ -155,7 +156,7 @@ def main():
         print(e)
         quit()
 
-    logging.basicConfig(filename='udp2mqtt.log', level=logging.INFO, format=LOG_FORMAT)
+    logging.basicConfig(filename='udp2mqtt.log', level=logging.WARN, format=LOG_FORMAT)
     console = logging.StreamHandler()
     console.setLevel(logging.WARN)
     formatter = logging.Formatter(LOG_FORMAT)
@@ -179,7 +180,13 @@ def main():
     except KeyboardInterrupt:
         # start the stopping in a separate thread so that is not
         # stopped by the KeyboardInterrupt
-        a = Thread(target=mi.stop()) 
+        a = Thread(target=mi.stop())
+        a.start()
+        a.join()
+        a = Thread(target=si.close())
+        a.start()
+        a.join()
+        a = Thread(target=li.close())
         a.start()
         a.join()
 
