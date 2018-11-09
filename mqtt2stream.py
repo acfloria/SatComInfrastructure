@@ -1,0 +1,156 @@
+#!/usr/bin/env python
+
+import ConfigParser
+import logging
+import paho.mqtt.client as mqtt
+import socket
+from threading import Thread
+import time
+import tornado.web
+import tornado.ioloop
+import tornado.httpclient
+import tornado.httputil
+
+LOG_FORMAT = '%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'
+LOGGER = logging.getLogger(__name__)
+
+class StreamInterface():
+    def __init__(self, tx_port):
+        self.__sock = None
+        self.__tx_port = tx_port
+
+    def send(self, data):
+        LOGGER.info('Sending stream data on UDP')
+        chunks_list = [data[i:i+4096] for i in range(0, len(data), 1400)]
+        for chunk in chunks_list:
+            self.__sock.sendto(chunk, ('localhost', self.__tx_port))
+
+    def open(self):
+        LOGGER.warn('Opening Stream interface')
+        self.__sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.__sock.setblocking(False)
+
+    def close(self):
+        LOGGER.warn('Closing Stream interface')
+        self.__sock.close()
+        self.__sock = None
+
+
+class MqttInterface(object):
+    def __init__(self, ip, port, user, pwd):
+        self.__broker_ip = ip
+        self.__broker_port = port
+        self.__broker_user = user
+        self.__broker_pwd = pwd
+        self.__client = None
+        self.__client_connected_flag = False
+        self.__client_bad_connection_flag = False
+        self.__publish_counter = 1
+        self.stream_on_message_callback = None
+
+    def __connect(self):
+        self.__client = mqtt.Client()
+        self.__client.on_connect = self.__on_connect
+        self.__client.on_message = self.__on_message
+        self.__client.on_disconnect = self.__on_disconnect
+        self.__client.username_pw_set(self.__broker_user, self.__broker_pwd)
+
+        self.__client.enable_logger(LOGGER)
+
+        self.__client.loop_start()
+        self.__client.connect(self.__broker_ip, self.__broker_port)
+
+        # wait in loop until connect is done
+        while not self.__client_connected_flag and not self.__client_bad_connection_flag:
+            time.sleep(1)
+
+        if self.__client_bad_connection_flag:
+            self.__client.loop_stop()
+            sys.exit()
+
+    def __on_message(self, client, userdata, message):
+        LOGGER.warn('Received message from unknown topic: ' + message.topic)
+
+    def __on_connect(self, client, userdata, flags, rc):
+        if rc==0:
+            self.__client_connected_flag = True
+            LOGGER.warn('Connected with result code ' + str(rc))
+
+            # Subscribing in on_connect() means that if we lose the connection and
+            # reconnect then subscriptions will be renewed.
+            client.subscribe('stream/data', qos=2)
+
+            # add the callback to handle the respective queues
+            client.message_callback_add('stream/data', self.__callback_stream)
+
+        elif rc == 3:
+            LOGGER.warn('Connected failed, server unavailable, retrying in 1 second')
+        else:
+            self.bad_connection_flag = True
+            LOGGER.error('Connected failed with result code ' + str(rc))
+
+    def __on_disconnect(self, client, userdata, rc):
+        self.__client_connected_flag = False
+        LOGGER.warn('Client disconnecting, reason: ' + str(rc))
+
+    def __callback_stream(self, client, userdata, msg):
+        LOGGER.info('MQTT received message from ' + msg.topic)
+        self.stream_on_message_callback(msg.payload)
+
+    def start(self):
+        self.__connect()
+
+    def stop(self):
+        self.__client.loop_stop()
+        self.__client.disconnect()
+        self.__client = None
+        LOGGER.warn('Stopped')
+
+
+def main():
+    config_file = 'mqtt2stream.cfg'
+    config = ConfigParser.RawConfigParser()
+    credentials_file = 'credentials.cfg'
+    credentials = ConfigParser.RawConfigParser()
+    try:
+        config.read(config_file)
+        credentials.read(credentials_file)
+        host = config.get('mqtt', 'hostname')
+        port = config.getint('mqtt', 'port')
+        user = credentials.get('mqtt', 'user')
+        pwd = credentials.get('mqtt', 'password')
+        tx_port = config.getint('stream', 'target_port')
+
+    except ConfigParser.Error as e:
+        print('Error reading configuration files ' + config_file + ' and ' + credentials_file + ':')
+        print(e)
+        quit()
+
+    logging.basicConfig(filename='udp2mqtt.log', level=logging.WARN, format=LOG_FORMAT)
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARN)
+    formatter = logging.Formatter(LOG_FORMAT)
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+    mi = MqttInterface(host, port, user, pwd)
+    si = StreamInterface(tx_port)
+
+    mi.stream_on_message_callback = si.send
+
+    si.open()
+    mi.start() # needs to be called last because the mqtt loop is started in here
+
+    try:
+        tornado.ioloop.IOLoop.current().start()
+    except KeyboardInterrupt:
+        # start the stopping in a separate thread so that is not
+        # stopped by the KeyboardInterrupt
+        a = Thread(target=mi.stop())
+        a.start()
+        a.join()
+        a = Thread(target=si.close())
+        a.start()
+        a.join()
+
+if __name__ == '__main__':
+    main()
