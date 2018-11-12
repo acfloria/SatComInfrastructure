@@ -21,9 +21,7 @@ class StreamInterface():
 
     def send(self, data):
         LOGGER.info('Sending stream data on UDP')
-        chunks_list = [data[i:i+4096] for i in range(0, len(data), 1400)]
-        for chunk in chunks_list:
-            self.__sock.sendto(chunk, ('localhost', self.__tx_port))
+        self.__sock.sendto(data, ('localhost', self.__tx_port))
 
     def open(self):
         LOGGER.warn('Opening Stream interface')
@@ -126,7 +124,7 @@ def main():
         print(e)
         quit()
 
-    logging.basicConfig(filename='udp2mqtt.log', level=logging.WARN, format=LOG_FORMAT)
+    logging.basicConfig(filename='mqtt2stream.log', level=logging.WARN, format=LOG_FORMAT)
     console = logging.StreamHandler()
     console.setLevel(logging.WARN)
     formatter = logging.Formatter(LOG_FORMAT)
