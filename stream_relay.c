@@ -97,7 +97,17 @@ void *mqtt_loop() {
 
             if ((rc = MQTTClient_waitForCompletion(client, token, TIMEOUT)) != MQTTCLIENT_SUCCESS)
             {
-                printf("Message not sent within %d milliseconds\n", rc);
+                if (rc == MQTTCLIENT_DISCONNECTED) {
+                    if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
+                        printf("Failed to reconnect, return code %d\n", rc);
+                        finished = 1;
+                        exit(EXIT_FAILURE);
+                    } else {
+                        printf("Reconnected to the server\n");
+                    }
+                } else {
+                    printf("Message not sent within %d milliseconds, error code: %d\n", TIMEOUT, rc);
+                }
             }
 
             buflen[read_idx] = 0;
