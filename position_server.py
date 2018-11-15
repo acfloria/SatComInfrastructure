@@ -15,6 +15,7 @@ import tornado.httputil
 from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
 import json
 import math
+import argparse
 
 LOG_FORMAT = '%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'
 LOGGER = logging.getLogger(__name__)
@@ -140,64 +141,73 @@ class MqttInterface(object):
         self.__client = None
         LOGGER.warn('Stopped')
 
-def stopall():
-    server.socket.close()
-    mi.stop()
+class PositionServer(object):
 
-def main():
-    config_file = 'udp2mqtt.cfg'
-    config = ConfigParser.RawConfigParser()
-    credentials_file = 'credentials.cfg'
-    credentials = ConfigParser.RawConfigParser()
-    try:
-        config.read(config_file)
-        credentials.read(credentials_file)
-        host = config.get('mqtt', 'hostname')
-        port = config.getint('mqtt', 'port')
-        user = credentials.get('mqtt', 'user')
-        pwd = credentials.get('mqtt', 'password')
-    except ConfigParser.Error as e:
-        print('Error reading configuration files ' + config_file + ' and ' + credentials_file + ':')
-        print(e)
-        quit()
+    def __init__(self, config_file, credentials_file, port=8080):
+        self.port = port
 
-    logging.basicConfig(filename='position_server.log', level=logging.INFO, format=LOG_FORMAT)
-    console = logging.StreamHandler()
-    console.setLevel(logging.WARN)
-    formatter = logging.Formatter(LOG_FORMAT)
-    console.setFormatter(formatter)
-    logging.getLogger('').addHandler(console)
-    mi = MqttInterface(host, port, user, pwd)
+        # Create config readers
+        config = ConfigParser.RawConfigParser()
+        credentials = ConfigParser.RawConfigParser()
+        try:
+            config.read(config_file)
+            credentials.read(credentials_file)
+            self.host = config.get('mqtt', 'hostname')
+            self.port = config.getint('mqtt', 'port')
+            self.user = credentials.get('mqtt', 'user')
+            self.pwd = credentials.get('mqtt', 'password')
+        except ConfigParser.Error as e:
+            print('Error reading configuration files ' + config_file + ' and ' + credentials_file + ':')
+            raise e
 
-    mi.mavlink_message_callback = printmsg
-    mi.satcom_on_message_callback = printmsg
-
-    try:
-        mi.start() # needs to be called last because the mqtt loop is started in here
-    except:
-        print("error")
+        logging.basicConfig(filename='position_server.log', level=logging.INFO, format=LOG_FORMAT)
+        console = logging.StreamHandler()
+        console.setLevel(logging.WARN)
+        formatter = logging.Formatter(LOG_FORMAT)
+        console.setFormatter(formatter)
+        logging.getLogger('').addHandler(console)
 
 
-    try:
-        #Create a web server and define the handler to manage the
-        #incoming request
-        server = HTTPServer(('', PORT_NUMBER), myHandler)
-        print 'Started httpserver on port ' , PORT_NUMBER
-        
-        #Wait forever for incoming htto requests
-        server.serve_forever()
+    def start_server(self):
+        mi = MqttInterface(self.host, self.port, self.user, self.pwd)
 
-    except KeyboardInterrupt:
-        print '^C received, shutting down the web server'
+        mi.mavlink_message_callback = printmsg
+        mi.satcom_on_message_callback = printmsg
+
+        mi.start() # Just let this raise an error if it doesn't start?
 
         try:
-            tornado.ioloop.IOLoop.current().start()
+            #Create a web server and define the handler to manage the
+            #incoming request
+            server = HTTPServer(('', self.port), myHandler)
+            print('Started httpserver on port ' , self.port)
+
+            #Wait forever for incoming http requests
+            server.serve_forever()
+
         except KeyboardInterrupt:
-            # start the stopping in a separate thread so that is not
-            # stopped by the KeyboardInterrupt
-            a = Thread(target=stopall)
-            a.start()
-            a.join()
+            print('^C received, shutting down the web server')
+
+            try:
+                tornado.ioloop.IOLoop.current().start()
+            except KeyboardInterrupt:
+                # start the stopping in a separate thread so that is not
+                # stopped by the KeyboardInterrupt
+                a = Thread(target=mi.stop())
+                a.start()
+                a.join()
+                b = Thread(target=server.socket.close())
+                b.start()
+                b.join()
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(
+        description='Start the position server that reads mavlink messages and publishes to JSON for INVOLI')
+    parser.add_argument('-mc', '--mqtt-cfg', default='udp2mqtt.cfg', required=False, help='MQTT configuration file')
+    parser.add_argument('-cc', '--credentials-cfg', default='credentials.cfg', required=False,
+                        help='Credentials configuration file')
+    parser.add_argument('-p', '--port', default=8080, required=False, help='Port number')
+    args = parser.parse_args()
+
+    server = PositionServer(config_file=args.mqtt_cfg, credentials_file=args.credentials_cfg, port=args.port)
+    server.start_server()
