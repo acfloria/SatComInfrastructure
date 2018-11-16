@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import ConfigParser
+import argparse
 import logging
 import paho.mqtt.client as mqtt
 import socket
@@ -263,10 +264,8 @@ class MqttInterface(object):
         LOGGER.warn('Stopped')
 
 
-def main():
-    config_file = 'relay.cfg'
+def main(config_file, credentials_file):
     config = ConfigParser.RawConfigParser()
-    credentials_file = 'credentials.cfg'
     credentials = ConfigParser.RawConfigParser()
     rock7_credentials = {}
     try:
@@ -323,4 +322,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(
+        description='Start the relay server for receiving LTE and/or SatCom messages and publishing to MQTT')
+    parser.add_argument('-rc', '--relay-cfg', default='relay.cfg', required=False,
+                        help='Incoming connections (LTE/Satcom) configuration file')
+    parser.add_argument('-cc', '--credentials-cfg', default='credentials.cfg', required=False,
+                        help='Credentials configuration file')
+    args = parser.parse_args()
+    main(args.relay_cfg, args.credentials_cfg)

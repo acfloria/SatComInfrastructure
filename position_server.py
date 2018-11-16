@@ -19,8 +19,8 @@ import argparse
 
 LOG_FORMAT = '%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'
 LOGGER = logging.getLogger(__name__)
-PORT_NUMBER = 8080
 MAV = mavlink.MAVLink(0)
+
 # posdata = mavlink.MAVLink_global_position_int_message(0,0,0,0,0,0,0,0,0)
 posdata = { 'latDD': 0,
             'lonDD': 0,
@@ -42,7 +42,7 @@ def printmsg(data):
             # print 'MAV MSG %3d %s' % (msg.get_msgId(), msg.get_type())
             if (msg.get_msgId() == 24):
                 newpos(msg)
-                print msg
+                print(msg)
 
 def newpos(msg):
     posdata['latDD'] = msg.lat/1e7
@@ -143,8 +143,8 @@ class MqttInterface(object):
 
 class PositionServer(object):
 
-    def __init__(self, config_file, credentials_file, port=8080):
-        self.port = port
+    def __init__(self, config_file, credentials_file):
+
 
         # Create config readers
         config = ConfigParser.RawConfigParser()
@@ -152,10 +152,12 @@ class PositionServer(object):
         try:
             config.read(config_file)
             credentials.read(credentials_file)
-            self.host = config.get('mqtt', 'hostname')
-            self.port = config.getint('mqtt', 'port')
-            self.user = credentials.get('mqtt', 'user')
-            self.pwd = credentials.get('mqtt', 'password')
+            self.mqtt_host = config.get('mqtt', 'hostname')
+            self.mqtt_port = config.getint('mqtt', 'port')
+            self.mqtt_user = credentials.get('mqtt', 'user')
+            self.mqtt_pwd = credentials.get('mqtt', 'password')
+            self.http_host = config.get('http', 'hostname')
+            self.http_port = config.getint('http', 'port')
         except ConfigParser.Error as e:
             print('Error reading configuration files ' + config_file + ' and ' + credentials_file + ':')
             raise e
@@ -169,7 +171,7 @@ class PositionServer(object):
 
 
     def start_server(self):
-        mi = MqttInterface(self.host, self.port, self.user, self.pwd)
+        mi = MqttInterface(self.mqtt_host, self.mqtt_port, self.mqtt_user, self.mqtt_pwd)
 
         mi.mavlink_message_callback = printmsg
         mi.satcom_on_message_callback = printmsg
@@ -177,12 +179,12 @@ class PositionServer(object):
         mi.start() # Just let this raise an error if it doesn't start?
 
         try:
-            #Create a web server and define the handler to manage the
-            #incoming request
-            server = HTTPServer(('', self.port), myHandler)
-            print('Started httpserver on port ' , self.port)
+            # Create a web server and define the handler to manage the
+            # incoming request
+            server = HTTPServer((self.http_host, self.http_port), myHandler)
+            print('Started httpserver on port ', self.mqtt_port)
 
-            #Wait forever for incoming http requests
+            # Wait forever for incoming http requests
             server.serve_forever()
 
         except KeyboardInterrupt:
@@ -191,23 +193,25 @@ class PositionServer(object):
             try:
                 tornado.ioloop.IOLoop.current().start()
             except KeyboardInterrupt:
+                server.socket.close()
+                mi.stop()
                 # start the stopping in a separate thread so that is not
                 # stopped by the KeyboardInterrupt
-                a = Thread(target=mi.stop())
-                a.start()
-                a.join()
-                b = Thread(target=server.socket.close())
-                b.start()
-                b.join()
+                #a = Thread(target=mi.stop())
+                #a.start()
+                #a.join()
+                # b = Thread(target=server.socket.close())
+                # b.start()
+                # b.join()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Start the position server that reads mavlink messages and publishes to JSON for INVOLI')
-    parser.add_argument('-mc', '--mqtt-cfg', default='udp2mqtt.cfg', required=False, help='MQTT configuration file')
+    parser.add_argument('-pc', '--ps-cfg', default='ps_local.cfg', required=False,
+                        help='Position server configuration file (MQTT broker and HTTP server details)')
     parser.add_argument('-cc', '--credentials-cfg', default='credentials.cfg', required=False,
                         help='Credentials configuration file')
-    parser.add_argument('-p', '--port', default=8080, required=False, help='Port number')
     args = parser.parse_args()
 
-    server = PositionServer(config_file=args.mqtt_cfg, credentials_file=args.credentials_cfg, port=args.port)
+    server = PositionServer(config_file=args.ps_cfg, credentials_file=args.credentials_cfg)
     server.start_server()
