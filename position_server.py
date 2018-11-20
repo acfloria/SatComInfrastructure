@@ -25,6 +25,7 @@ class InvoliPositionMessage(object):
     position_data = {'latDD': 0,
             'lonDD': 0,
             'GPSaltitudeMM': 0,
+            'pressureAltitude': 0,
             'headingDE': 0,
             'horVelocityCMS': 0,
             'verVelocityCMS': 0,
@@ -36,7 +37,12 @@ class InvoliPositionMessage(object):
         for msg in m:
             # print 'MAV MSG %3d %s' % (msg.get_msgId(), msg.get_type())
             if (msg.get_msgId() == 24):
+                # Message type GPS_RAW_INT
                 self.set_message(msg)
+                LOGGER.debug(msg)
+            elif (msg.get_msgId() == 105):
+                # Message type HIGHRES_IMU
+                self.set_imu_message(msg)
                 LOGGER.debug(msg)
 
     def set_message(self, msg):
@@ -48,15 +54,11 @@ class InvoliPositionMessage(object):
         # self.position_data['climbrate'] = msg.vz
         # self.position_data['heading'] = msg.hdg
 
+    def set_imu_message(self, msg):
+        self.position_data['pressureAltitude'] = msg.pressure_alt
+
 
 class myHandler(BaseHTTPRequestHandler):
-
-    # def __init__(self, *args, **kwargs):
-    #     self.position_message = InvoliPositionMessage()
-    #     # BaseHTTPRequestHandler calls do_GET **inside** __init__ !!!
-    #     # So we have to call super().__init__ after setting attributes.
-    #     super().__init__(*args, **kwargs)
-
     #Handler for the GET requests
     def do_GET(self):
         self.send_response(200)
@@ -148,7 +150,7 @@ class MqttInterface(object):
 
 
 class PositionServer(object):
-    def __init__(self, config_file, credentials_file, log_level=logging.WARN):
+    def __init__(self, config_file, credentials_file, log_file='position_server.log', log_level=logging.WARN):
         # Create config readers
         config = ConfigParser.RawConfigParser()
         credentials = ConfigParser.RawConfigParser()
@@ -165,7 +167,7 @@ class PositionServer(object):
             LOGGER.error('Error reading configuration files ' + config_file + ' and ' + credentials_file + ':')
             raise e
 
-        logging.basicConfig(filename='position_server.log', level=logging.INFO, format=LOG_FORMAT)
+        logging.basicConfig(filename=log_file, level=log_level, format=LOG_FORMAT)
         console = logging.StreamHandler()
         console.setLevel(log_level)
         formatter = logging.Formatter(LOG_FORMAT)
@@ -192,18 +194,7 @@ class PositionServer(object):
             LOGGER.warning('^C received, shutting down the web server')
             server.socket.close()
             mi.stop()
-            # try:
-            #     tornado.ioloop.IOLoop.current().start()
-            # except KeyboardInterrupt:
-
-                # start the stopping in a separate thread so that is not
-                # stopped by the KeyboardInterrupt
-                # a = Thread(target=mi.stop())
-                # a.start()
-                # a.join()
-                # b = Thread(target=server.socket.close())
-                # b.start()
-                # b.join()
+            LOGGER.warning('Server shut down')
 
 pos_message = InvoliPositionMessage()
 
@@ -214,13 +205,16 @@ if __name__ == '__main__':
                         help='Position server configuration file (MQTT broker and HTTP server details)')
     parser.add_argument('-cc', '--credentials-cfg', default='credentials.cfg', required=False,
                         help='Credentials configuration file')
+    parser.add_argument('-l', '--log-file', default='position_server.log', required=False,
+                        help='Log file (default position_server.log)')
     parser.add_argument('-v', '--verbose', action='store_true',
-                        help='Verbose output (set logger level to DEBUG, default is WARNING')
+                        help='Verbose output (set logger level to DEBUG, default is WARNING)')
     args = parser.parse_args()
 
     log_level = logging.WARN
     if args.verbose:
         log_level = logging.DEBUG
 
-    pos_server = PositionServer(config_file=args.ps_cfg, credentials_file=args.credentials_cfg, log_level=log_level)
+    pos_server = PositionServer(config_file=args.ps_cfg, credentials_file=args.credentials_cfg,
+                                log_file=args.log_file, log_level=log_level)
     pos_server.start_server()
