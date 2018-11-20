@@ -22,15 +22,17 @@ MAV = mavlink.MAVLink(0)
 
 class InvoliPositionMessage(object):
     # posdata = mavlink.MAVLink_global_position_int_message(0,0,0,0,0,0,0,0,0)
-    position_data = {'latDD': 0,
-            'lonDD': 0,
-            'GPSaltitudeMM': 0,
-            'pressureAltitude': 0,
-            'headingDE': 0,
-            'horVelocityCMS': 0,
-            'verVelocityCMS': 0,
-            'callsign': 'ASLSS2A',
-            'timeStamp': ''}
+    position_data = {
+        'source': "pixhawk",
+        'latDD': 0,
+        'lonDD': 0,
+        'GPSaltitudeMM': 0,
+        'pressureAltitudeMM': 0,
+        'headingDE2': 0,
+        'horVelocityCMS': 0,
+        'verVelocityCMS': 0,
+        'callsign': 'ASLSS2A',
+        'timeStamp': ''}
 
     def print_message(self, data):
         m = MAV.parse_buffer(data)
@@ -55,7 +57,7 @@ class InvoliPositionMessage(object):
         # self.position_data['heading'] = msg.hdg
 
     def set_imu_message(self, msg):
-        self.position_data['pressureAltitude'] = msg.pressure_alt
+        self.position_data['pressureAltitudeMM'] = int(msg.pressure_alt*1000)
 
 
 class myHandler(BaseHTTPRequestHandler):
@@ -196,6 +198,7 @@ class PositionServer(object):
             mi.stop()
             LOGGER.warning('Server shut down')
 
+# This global way of doing this isn't nice, but I don't know how to pass arg
 pos_message = InvoliPositionMessage()
 
 if __name__ == '__main__':
