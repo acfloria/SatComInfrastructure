@@ -15,6 +15,7 @@ import tornado.httputil
 from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
 import json
 import argparse
+import math
 
 LOG_FORMAT = '%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'
 LOGGER = logging.getLogger(__name__)
@@ -38,26 +39,40 @@ class InvoliPositionMessage(object):
         m = MAV.parse_buffer(data)
         for msg in m:
             # print 'MAV MSG %3d %s' % (msg.get_msgId(), msg.get_type())
-            if (msg.get_msgId() == 24):
-                # Message type GPS_RAW_INT
-                self.set_message(msg)
-                LOGGER.debug(msg)
-            elif (msg.get_msgId() == 105):
-                # Message type HIGHRES_IMU
+            if msg.get_msgId() == 105:            # Message type HIGHRES_IMU
                 self.set_imu_message(msg)
                 LOGGER.debug(msg)
-
-    def set_message(self, msg):
-        self.position_data['latDD'] = msg.lat / 1e7
-        self.position_data['lonDD'] = msg.lon / 1e7
-        self.position_data['GPSaltitudeMM'] = msg.alt
-        self.position_data['groundspeed'] = msg.vel
-        self.position_data['timeStamp'] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
-        # self.position_data['climbrate'] = msg.vz
-        # self.position_data['heading'] = msg.hdg
+            elif msg.get_msgId() == 33:           # Message type GLOBAL_POSITION_INT
+                self.set_global_pos_message(msg)
+                LOGGER.debug(msg)
+            # elif (msg.get_msgId() == 24):           # Message type GPS_RAW_INT
+            #     self.set_gps_message(msg)
+            #     LOGGER.debug(msg)
 
     def set_imu_message(self, msg):
         self.position_data['pressureAltitudeMM'] = int(msg.pressure_alt*1000)
+
+    def set_global_pos_message(self, msg):
+        self.position_data['latDD'] = msg.lat / 1e7
+        self.position_data['lonDD'] = msg.lon / 1e7
+        self.position_data['GPSaltitudeMM'] = msg.alt
+        self.position_data['horVelocityCMS'] = int(math.sqrt(msg.vx**2 + msg.vy**2))
+        self.position_data['verVelocityCMS'] = msg.vz
+        self.position_data['timeStamp'] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
+        # This is a terrible hack because there is something wrong with the casting from UINT16_T
+        if msg.hdg > 47535:
+            hdg = 36000 - 65535 + msg.hdg
+        else:
+            hdg = msg.hdg
+        self.position_data['headingDE2'] = hdg
+
+    def set_gps_message(self, msg):
+        self.position_data['latDD'] = msg.lat / 1e7
+        self.position_data['lonDD'] = msg.lon / 1e7
+        self.position_data['GPSaltitudeMM'] = msg.alt
+        self.position_data['horVelocityCMS'] = msg.vel
+        self.position_data['timeStamp'] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
+        # self.position_data['climbrate'] = msg.vz
 
 
 class myHandler(BaseHTTPRequestHandler):
@@ -198,7 +213,7 @@ class PositionServer(object):
             mi.stop()
             LOGGER.warning('Server shut down')
 
-# This global way of doing this isn't nice, but I don't know how to pass arg
+# This global way of doing this isn't nice, but I don't know how to properly pass args to the HTTP do_GET
 pos_message = InvoliPositionMessage()
 
 if __name__ == '__main__':
