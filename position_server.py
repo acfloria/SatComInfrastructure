@@ -36,18 +36,24 @@ class InvoliPositionMessage(object):
         'timeStamp': ''}
 
     def print_message(self, data):
-        m = MAV.parse_buffer(data)
-        for msg in m:
-            # print 'MAV MSG %3d %s' % (msg.get_msgId(), msg.get_type())
-            if msg.get_msgId() == 105:            # Message type HIGHRES_IMU
-                self.set_imu_message(msg)
-                LOGGER.debug(msg)
-            elif msg.get_msgId() == 33:           # Message type GLOBAL_POSITION_INT
-                self.set_global_pos_message(msg)
-                LOGGER.debug(msg)
-            # elif (msg.get_msgId() == 24):           # Message type GPS_RAW_INT
-            #     self.set_gps_message(msg)
-            #     LOGGER.debug(msg)
+        try:
+            m = MAV.parse_buffer(data)
+        except mavlink.MAVError as e:
+            LOGGER.warning(e)
+            return
+	if m is not None:
+	    for msg in m:
+		msg_id = msg.get_msgId()
+		# print 'MAV MSG %3d %s' % (msg.get_msgId(), msg.get_type())
+		if msg_id == 105:            # Message type HIGHRES_IMU
+		    self.set_imu_message(msg)
+		    LOGGER.debug(msg)
+		elif msg_id == 33:           # Message type GLOBAL_POSITION_INT
+		    self.set_global_pos_message(msg)
+		    LOGGER.debug(msg)
+		# elif (msg.get_msgId() == 24):           # Message type GPS_RAW_INT
+		#     self.set_gps_message(msg)
+		#     LOGGER.debug(msg)
 
     def set_imu_message(self, msg):
         self.position_data['pressureAltitudeMM'] = int(msg.pressure_alt*1000)
