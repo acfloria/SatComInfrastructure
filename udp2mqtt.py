@@ -11,8 +11,13 @@ import tornado.ioloop
 import tornado.httpclient
 import tornado.httputil
 
+from pymavlink import mavlink
+
+
 LOG_FORMAT = '%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'
 LOGGER = logging.getLogger(__name__)
+
+MAV = mavlink.MAVLink(0)
 
 
 class UdpInterface():
@@ -56,6 +61,7 @@ class MqttInterface(object):
         self.__client_connected_flag = False
         self.__client_bad_connection_flag = False
         self.__publish_counter = 1
+        self.__rejection_counter = 0
         self.lte_on_message_callback = None
         self.satcom_on_message_callback = None
 
@@ -122,6 +128,25 @@ class MqttInterface(object):
         self.__publish_message('telem/LTE_to_plane', data)
 
     def publish_satcom_message(self, data):
+        # check if the message is a valid one
+        m = None
+        try:
+            m = MAV.parse_buffer(data)
+        except:
+            pass
+        try:
+            if m is not None:
+                for msg in m:
+                    if (msg.get_msgId() == 69):
+                        self.__rejection_counter += 1
+
+                        if self.__rejection_counter == 100:
+                            self.__rejection_counter = 0
+                            LOGGER.warn('Satcom: Blocking MANUAL_CONTROL message')
+                        return
+        except:
+            pass
+
         LOGGER.warn('Send SatCom message to plane')
         self.__publish_message('telem/SatCom_to_plane', data)
 
