@@ -51,6 +51,9 @@ class InvoliPositionMessage(object):
                 elif msg_id == 33:           # Message type GLOBAL_POSITION_INT
                     self.set_global_pos_message(msg)
                     LOGGER.debug(msg)
+                elif msg_id == 74:
+                    self.set_vfr_hud_message(msg)
+                    LOGGER.debug(msg)
                 # elif (msg.get_msgId() == 24):           # Message type GPS_RAW_INT
                 #     self.set_gps_message(msg)
                 #     LOGGER.debug(msg)
@@ -66,10 +69,17 @@ class InvoliPositionMessage(object):
         self.position_data['verVelocityCMS'] = msg.vz
         self.position_data['timeStamp'] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
         # This is a terrible hack because there is something wrong with the casting from UINT16_T
-        if msg.hdg > 47535:
-            hdg = 36000 - 65535 + msg.hdg
+        # if msg.hdg > 47535:
+        #     hdg = 36000 - 65535 + msg.hdg
+        # else:
+        #     hdg = msg.hdg
+        # self.position_data['headingDE2'] = hdg
+
+    def set_vfr_hud_message(self, msg):
+        if msg.heading < 0:
+            hdg = (msg.heading + 360)*100
         else:
-            hdg = msg.hdg
+            hdg = msg.heading*100
         self.position_data['headingDE2'] = hdg
 
     def set_gps_message(self, msg):
