@@ -4,3 +4,5 @@ satcomSDcard/
 *~
 .settings*
 credentials.cfg
+.*
+*.csv
